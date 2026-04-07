@@ -1,18 +1,31 @@
-# Student Assignment Tracker (Notebook-Friendly)
+# Student Assignment Tracker (Notebook + UI Friendly)
 
-This project is a simple assignment planner designed to run cleanly in:
+This project now supports three ways to use the planner:
 
-- Jupyter Notebook
-- Google Colab
-- Standard Python scripts
+- **Web UI** with Streamlit (recommended for interactive input/editing)
+- **Jupyter Notebook / Google Colab**
+- **Standard Python script**
 
-## Quick start (script mode)
+## 1) Run the UI (best for non-coders)
+
+```bash
+pip install streamlit pandas
+streamlit run app.py
+```
+
+In the UI you can:
+- Add tasks with a form
+- Edit/remove tasks in a table
+- Set weekday study availability
+- Generate and visualize a schedule
+
+## 2) Run script mode
 
 ```bash
 python3 main.py
 ```
 
-## Quick start (Jupyter/Colab)
+## 3) Run in Jupyter/Colab
 
 ```python
 from datetime import date
@@ -39,8 +52,9 @@ pd.DataFrame(schedule_rows(schedule))
 
 ## File layout
 
-- `assignment_tracker.py`: all core classes and scheduling logic in one importable module for notebooks.
-- `main.py`: simple script entrypoint.
+- `assignment_tracker.py`: all core classes and scheduling logic.
+- `app.py`: Streamlit UI for input/edit/visualization.
+- `main.py`: script entrypoint.
 
 ## Notes
 
