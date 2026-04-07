@@ -17,7 +17,7 @@ In the UI you can:
 - Add tasks with a form
 - Edit/remove tasks in a table
 - Set weekday study availability
-- Generate and visualize a schedule
+- Generate a schedule
 
 ## 2) Run script mode
 
@@ -53,7 +53,7 @@ pd.DataFrame(schedule_rows(schedule))
 ## File layout
 
 - `assignment_tracker.py`: all core classes and scheduling logic.
-- `app.py`: Streamlit UI for input/edit/visualization.
+- `app.py`: Streamlit UI for input/editing and schedule generation.
 - `main.py`: script entrypoint.
 
 ## Notes

@@ -149,6 +149,3 @@ if st.button("Generate schedule", type="primary"):
             st.subheader("Generated schedule")
             st.dataframe(schedule_df, use_container_width=True)
 
-            chart_data = schedule_df.groupby("date", as_index=False)["hours"].sum()
-            st.subheader("Hours planned per day")
-            st.bar_chart(chart_data, x="date", y="hours")
