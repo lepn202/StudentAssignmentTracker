@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from assignment_tracker import ContinuousTask, NonContinuousTask, Planner, schedule_rows
+from assignment_tracker import ContinuousTask, NonContinuousTask, Planner
 
 st.set_page_config(page_title="Student Assignment Tracker", layout="wide")
 st.title("Student Assignment Tracker")
@@ -21,6 +21,15 @@ TASK_COLUMNS = [
     "min_session_hours",
     "max_session_hours",
 ]
+
+
+def to_rows(schedule):
+    rows = []
+    for day in sorted(schedule.keys()):
+        for task_name, hours in schedule[day]:
+            rows.append({"date": day.isoformat(), "task": task_name, "hours": hours})
+    return rows
+
 
 if "tasks_df" not in st.session_state:
     st.session_state.tasks_df = pd.DataFrame(columns=TASK_COLUMNS)
@@ -58,7 +67,6 @@ with st.form("add_task_form"):
         st.success(f"Added task: {new_row['name']}")
 
 st.subheader("2) Edit tasks")
-st.write("You can edit any cell directly and remove rows.")
 editable_df = st.data_editor(
     st.session_state.tasks_df,
     num_rows="dynamic",
@@ -81,8 +89,7 @@ availability_cols = st.columns(7)
 availability = {}
 for idx, day_name in enumerate(weekday_names):
     with availability_cols[idx]:
-        default_hours = 2.0 if idx < 5 else 3.0
-        availability[idx] = st.number_input(day_name, min_value=0.0, value=default_hours, step=0.5)
+        availability[idx] = st.number_input(day_name, min_value=0.0, value=2.0 if idx < 5 else 3.0, step=0.5)
 
 if st.button("Generate schedule", type="primary"):
     tasks = []
@@ -92,8 +99,7 @@ if st.button("Generate schedule", type="primary"):
         if not row.get("name"):
             continue
 
-        due_date_raw = row.get("due_date", today.isoformat())
-        due_date_obj = datetime.fromisoformat(str(due_date_raw)).date()
+        due_date_obj = datetime.fromisoformat(str(row.get("due_date", today.isoformat()))).date()
 
         if row.get("task_type") == "non_continuous":
             task = NonContinuousTask(
@@ -104,7 +110,7 @@ if st.button("Generate schedule", type="primary"):
                 course=str(row.get("course", "General")),
                 created_at=today,
             )
-        elif row.get("task_type") == "continuous":
+        else:
             task = ContinuousTask(
                 name=str(row["name"]),
                 estimated_hours=float(row["estimated_hours"]),
@@ -115,8 +121,6 @@ if st.button("Generate schedule", type="primary"):
                 min_session_hours=float(row.get("min_session_hours", 0.5)),
                 max_session_hours=float(row.get("max_session_hours", 2.0)),
             )
-        else:
-            continue
 
         tasks.append(task)
 
@@ -127,7 +131,7 @@ if st.button("Generate schedule", type="primary"):
         end_date = max(task.due_date for task in tasks)
         schedule = planner.build_schedule(tasks, start_date=today, end_date=end_date)
 
-        schedule_df = pd.DataFrame(schedule_rows(schedule))
+        schedule_df = pd.DataFrame(to_rows(schedule))
         if schedule_df.empty:
             st.warning("No schedule could be generated with the current inputs.")
         else:
