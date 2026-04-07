@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Tuple
+from uuid import uuid4
 
 Schedule = Dict[date, List[Tuple[str, float]]]
 
@@ -12,14 +13,21 @@ Schedule = Dict[date, List[Tuple[str, float]]]
 class Task:
     """Base class representing a student assignment task."""
 
-    name: str
-    estimated_hours: float
-    due_date: date
-    priority: int
-    course: str
-    created_at: date
-    completed_hours: float = 0.0
-    status: str = field(default="not_started")
+    name: str  # Public: shown directly to the user in schedules/UI.
+    estimated_hours: float  # Public: user-defined planning input.
+    due_date: date  # Public: required for schedule ordering.
+    priority: int  # Public: user-controlled urgency level.
+    course: str  # Public: displayed for context/filtering in UI.
+    created_at: date  # Public: useful metadata for display/sorting.
+
+    completed_hours: float = 0.0  # Public: visible progress metric.
+    status: str = field(default="not_started")  # Public: shown in UI/workflows.
+
+    _task_id: str = field(default_factory=lambda: uuid4().hex, init=False, repr=False)
+    # Private: stable internal identifier not needed in user-facing output.
+
+    _status_history: List[str] = field(default_factory=list, init=False, repr=False)
+    # Private: internal audit trail for status transitions.
 
     def remaining_hours(self) -> float:
         return max(0.0, self.estimated_hours - self.completed_hours)
@@ -42,6 +50,8 @@ class Task:
         else:
             self.status = "completed"
 
+        self._status_history.append(self.status)
+
     def is_completed(self) -> bool:
         return self.remaining_hours() == 0.0
 
@@ -55,8 +65,11 @@ class Task:
 class ContinuousTask(Task):
     """Task that can be split into multiple study sessions."""
 
-    min_session_hours: float = 0.5
-    max_session_hours: float = 2.0
+    min_session_hours: float = 0.5  # Public: user-configurable session preference.
+    max_session_hours: float = 2.0  # Public: user-configurable session cap.
+
+    _chunk_strategy_name: str = field(default="bounded_chunk", init=False, repr=False)
+    # Private: internal strategy label for debugging, not user input.
 
     def recommended_daily_chunk(self, days_left: int) -> float:
         if self.is_completed():
@@ -78,7 +91,10 @@ class ContinuousTask(Task):
 class NonContinuousTask(Task):
     """Task that is best completed in one uninterrupted work block."""
 
-    requires_single_block: bool = True
+    requires_single_block: bool = True  # Public: task behavior visible to planner/UI.
+
+    _block_strategy_name: str = field(default="single_block", init=False, repr=False)
+    # Private: internal strategy label for debugging, not user input.
 
     def recommended_daily_chunk(self, days_left: int) -> float:
         if self.is_completed():
@@ -96,7 +112,8 @@ class Planner:
     """Creates a schedule of tasks over a date range."""
 
     def __init__(self, daily_availability: Dict[int, float]):
-        self.daily_availability = daily_availability
+        self.daily_availability = daily_availability  # Public: editable by user workflows.
+        self._last_generated_schedule_size = 0  # Private: internal telemetry/debug value.
 
     def build_schedule(
         self,
@@ -149,42 +166,14 @@ class Planner:
 
             current_day += timedelta(days=1)
 
+        self._last_generated_schedule_size = sum(len(items) for items in schedule.values())
         return schedule
 
 
 def schedule_rows(schedule: Schedule) -> List[dict]:
-    """Notebook-friendly flat rows for easy DataFrame conversion."""
+    """Flat rows for easy display in notebook or UI tables."""
     rows: List[dict] = []
     for day in sorted(schedule.keys()):
         for task_name, hours in schedule[day]:
             rows.append({"date": day.isoformat(), "task": task_name, "hours": hours})
     return rows
-
-
-def build_demo_tasks(today: date) -> List[Task]:
-    return [
-        ContinuousTask(
-            name="History Essay",
-            estimated_hours=8,
-            due_date=today + timedelta(days=6),
-            priority=5,
-            course="History",
-            created_at=today,
-        ),
-        NonContinuousTask(
-            name="Math Worksheet Set",
-            estimated_hours=3,
-            due_date=today + timedelta(days=2),
-            priority=4,
-            course="Math",
-            created_at=today,
-        ),
-        ContinuousTask(
-            name="Biology Reading Notes",
-            estimated_hours=4,
-            due_date=today + timedelta(days=5),
-            priority=3,
-            course="Biology",
-            created_at=today,
-        ),
-    ]

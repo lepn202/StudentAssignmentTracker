@@ -11,7 +11,7 @@ st.set_page_config(page_title="Student Assignment Tracker", layout="wide")
 st.title("Student Assignment Tracker")
 st.caption("Add/edit assignments, then generate a study schedule.")
 
-DEFAULT_COLUMNS = [
+TASK_COLUMNS = [
     "name",
     "course",
     "task_type",
@@ -23,27 +23,14 @@ DEFAULT_COLUMNS = [
 ]
 
 if "tasks_df" not in st.session_state:
-    st.session_state.tasks_df = pd.DataFrame(
-        [
-            {
-                "name": "History Essay",
-                "course": "History",
-                "task_type": "continuous",
-                "estimated_hours": 8.0,
-                "due_date": (date.today()).isoformat(),
-                "priority": 5,
-                "min_session_hours": 0.5,
-                "max_session_hours": 2.0,
-            }
-        ]
-    )
+    st.session_state.tasks_df = pd.DataFrame(columns=TASK_COLUMNS)
 
 st.subheader("1) Add a task")
 with st.form("add_task_form"):
     c1, c2, c3 = st.columns(3)
     with c1:
-        name = st.text_input("Task name", placeholder="Essay Draft")
-        course = st.text_input("Course", placeholder="English")
+        name = st.text_input("Task name")
+        course = st.text_input("Course")
         task_type = st.selectbox("Task type", ["continuous", "non_continuous"])
     with c2:
         estimated_hours = st.number_input("Estimated hours", min_value=0.5, value=2.0, step=0.5)
@@ -53,8 +40,7 @@ with st.form("add_task_form"):
         min_session_hours = st.number_input("Min session hours", min_value=0.25, value=0.5, step=0.25)
         max_session_hours = st.number_input("Max session hours", min_value=0.5, value=2.0, step=0.5)
 
-    submitted = st.form_submit_button("Add task")
-    if submitted and name.strip():
+    if st.form_submit_button("Add task") and name.strip():
         new_row = {
             "name": name.strip(),
             "course": course.strip() or "General",
@@ -87,7 +73,7 @@ editable_df = st.data_editor(
         "max_session_hours": st.column_config.NumberColumn("max_session_hours", min_value=0.5, step=0.5),
     },
 )
-st.session_state.tasks_df = editable_df[DEFAULT_COLUMNS].copy()
+st.session_state.tasks_df = editable_df[TASK_COLUMNS].copy()
 
 st.subheader("3) Set weekly availability")
 weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -99,11 +85,10 @@ for idx, day_name in enumerate(weekday_names):
         availability[idx] = st.number_input(day_name, min_value=0.0, value=default_hours, step=0.5)
 
 if st.button("Generate schedule", type="primary"):
-    rows = st.session_state.tasks_df.to_dict(orient="records")
     tasks = []
     today = date.today()
 
-    for row in rows:
+    for row in st.session_state.tasks_df.to_dict(orient="records"):
         if not row.get("name"):
             continue
 
@@ -148,4 +133,3 @@ if st.button("Generate schedule", type="primary"):
         else:
             st.subheader("Generated schedule")
             st.dataframe(schedule_df, use_container_width=True)
-
