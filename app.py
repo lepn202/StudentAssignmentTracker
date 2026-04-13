@@ -1,3 +1,9 @@
+"""
+Streamlit UI for the Student Assignment Tracker.
+Provides forms and data editors for users to manage tasks,
+set their availability, and generate a study schedule.
+"""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -7,10 +13,12 @@ import streamlit as st
 
 from assignment_tracker import ContinuousTask, NonContinuousTask, Planner
 
+# Page configuration and title
 st.set_page_config(page_title="Student Assignment Tracker", layout="wide")
 st.title("Student Assignment Tracker")
 st.caption("Add/edit assignments, then generate a study schedule.")
 
+# Columns used for the task data
 TASK_COLUMNS = [
     "name",
     "course",
@@ -24,6 +32,15 @@ TASK_COLUMNS = [
 
 
 def to_rows(schedule):
+    """
+    Transforms the schedule dictionary into a list of rows for a DataFrame.
+
+    Args:
+        schedule (dict): A dictionary mapping dates to lists of (task_name, hours) tuples.
+
+    Returns:
+        list: A list of dictionaries, each representing a row with 'date', 'task', and 'hours'.
+    """
     rows = []
     for day in sorted(schedule.keys()):
         for task_name, hours in schedule[day]:
@@ -31,9 +48,11 @@ def to_rows(schedule):
     return rows
 
 
+# Initialize session state for storing tasks
 if "tasks_df" not in st.session_state:
     st.session_state.tasks_df = pd.DataFrame(columns=TASK_COLUMNS)
 
+# --- 1) Add a task ---
 st.subheader("1) Add a task")
 with st.form("add_task_form"):
     c1, c2, c3 = st.columns(3)
@@ -66,6 +85,7 @@ with st.form("add_task_form"):
         )
         st.success(f"Added task: {new_row['name']}")
 
+# --- 2) Edit tasks ---
 st.subheader("2) Edit tasks")
 editable_df = st.data_editor(
     st.session_state.tasks_df,
@@ -83,6 +103,7 @@ editable_df = st.data_editor(
 )
 st.session_state.tasks_df = editable_df[TASK_COLUMNS].copy()
 
+# --- 3) Set weekly availability ---
 st.subheader("3) Set weekly availability")
 weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 availability_cols = st.columns(7)
@@ -91,10 +112,12 @@ for idx, day_name in enumerate(weekday_names):
     with availability_cols[idx]:
         availability[idx] = st.number_input(day_name, min_value=0.0, value=2.0 if idx < 5 else 3.0, step=0.5)
 
+# --- Generate schedule logic ---
 if st.button("Generate schedule", type="primary"):
     tasks = []
     today = date.today()
 
+    # Convert DataFrame rows into Task objects
     for row in st.session_state.tasks_df.to_dict(orient="records"):
         if not row.get("name"):
             continue
@@ -127,6 +150,7 @@ if st.button("Generate schedule", type="primary"):
     if not tasks:
         st.warning("Please add at least one valid task.")
     else:
+        # Build the schedule using the Planner class
         planner = Planner(availability)
         end_date = max(task.due_date for task in tasks)
         schedule = planner.build_schedule(tasks, start_date=today, end_date=end_date)
