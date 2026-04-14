@@ -10,7 +10,8 @@ from datetime import date, timedelta
 from typing import Dict, Iterable, List, Tuple
 
 # Type alias for the study schedule
-Schedule = Dict[date, List[Tuple[str, float]]]
+# Date -> List of (task_name, course, hours)
+Schedule = Dict[date, List[Tuple[str, str, float]]]
 
 
 class TaskProgress:
@@ -170,7 +171,49 @@ class Task:
         """
         Checks if the task has been finished.
         """
-        return self.remaining_hours() == 0.0
+        return self.remaining_hours() <= 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self._name,
+            "estimated_hours": self.estimated_hours,
+            "due_date": self._due_date.isoformat(),
+            "priority": self._priority,
+            "course": self._course,
+            "created_at": self._created_at.isoformat(),
+            "completed_hours": self.completed_hours,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Task:
+        # This will be overridden by subclasses or handled by a factory
+        task_type = data.get("task_type")
+        if task_type == "continuous":
+            return ContinuousTask.from_dict(data)
+        elif task_type == "non_continuous":
+            return NonContinuousTask.from_dict(data)
+        else:
+            due_date = data["due_date"]
+            if isinstance(due_date, str):
+                due_date = date.fromisoformat(due_date)
+
+            created_at = data.get("created_at")
+            if isinstance(created_at, str):
+                created_at = date.fromisoformat(created_at)
+            elif created_at is None:
+                created_at = date.today()
+
+            return Task(
+                name=data["name"],
+                estimated_hours=data["estimated_hours"],
+                due_date=due_date,
+                priority=data["priority"],
+                course=data["course"],
+                created_at=created_at,
+                completed_hours=data.get("completed_hours", 0.0),
+                status=data.get("status", "not_started"),
+            )
 
     def recommended_daily_chunk(self, days_left: int) -> float:
         """
@@ -219,6 +262,38 @@ class ContinuousTask(Task):
     def max_session_hours(self, value: float) -> None:
         self._max_session_hours = value
 
+    def to_dict(self) -> dict:
+        d = super().to_dict()
+        d["task_type"] = "continuous"
+        d["min_session_hours"] = self._min_session_hours
+        d["max_session_hours"] = self._max_session_hours
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ContinuousTask:
+        due_date = data["due_date"]
+        if isinstance(due_date, str):
+            due_date = date.fromisoformat(due_date)
+
+        created_at = data.get("created_at")
+        if isinstance(created_at, str):
+            created_at = date.fromisoformat(created_at)
+        elif created_at is None:
+            created_at = date.today()
+
+        return cls(
+            name=data["name"],
+            estimated_hours=data["estimated_hours"],
+            due_date=due_date,
+            priority=data["priority"],
+            course=data["course"],
+            created_at=created_at,
+            completed_hours=data.get("completed_hours", 0.0),
+            status=data.get("status", "not_started"),
+            min_session_hours=data.get("min_session_hours", 0.5),
+            max_session_hours=data.get("max_session_hours", 2.0),
+        )
+
     def recommended_daily_chunk(self, days_left: int) -> float:
         """
         Calculates a recommended amount of work, respecting session hour constraints.
@@ -266,6 +341,36 @@ class NonContinuousTask(Task):
     def requires_single_block(self, value: bool) -> None:
         self._requires_single_block = value
 
+    def to_dict(self) -> dict:
+        d = super().to_dict()
+        d["task_type"] = "non_continuous"
+        d["requires_single_block"] = self._requires_single_block
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> NonContinuousTask:
+        due_date = data["due_date"]
+        if isinstance(due_date, str):
+            due_date = date.fromisoformat(due_date)
+
+        created_at = data.get("created_at")
+        if isinstance(created_at, str):
+            created_at = date.fromisoformat(created_at)
+        elif created_at is None:
+            created_at = date.today()
+
+        return cls(
+            name=data["name"],
+            estimated_hours=data["estimated_hours"],
+            due_date=due_date,
+            priority=data["priority"],
+            course=data["course"],
+            created_at=created_at,
+            completed_hours=data.get("completed_hours", 0.0),
+            status=data.get("status", "not_started"),
+            requires_single_block=data.get("requires_single_block", True),
+        )
+
     def recommended_daily_chunk(self, days_left: int) -> float:
         """
         Recommends completing the entire remaining work for non-continuous tasks.
@@ -295,11 +400,15 @@ class Planner:
             end_date (date): The last possible day of the schedule.
 
         Returns:
-            Schedule: A dictionary mapping each date to a list of (task_name, hours) tuples.
+            Schedule: A dictionary mapping each date to a list of (task_name, course, hours) tuples.
         """
         schedule: Schedule = defaultdict(list)
+
+        # We work on copies to avoid mutating original task objects during planning
+        task_copies = [Task.from_dict(t.to_dict()) for t in tasks]
+
         # Sort tasks by due date (earliest first) and then by priority (highest first)
-        task_list = sorted(list(tasks), key=lambda t: (t.due_date, -t.priority))
+        task_list = sorted(task_copies, key=lambda t: (t.due_date, -t.priority))
 
         if start_date > end_date:
             return schedule
@@ -322,21 +431,21 @@ class Planner:
                     needed = task.recommended_daily_chunk(days_left)
                     # Non-continuous tasks are only added if they fit in the remaining time
                     if needed <= hours_left:
-                        schedule[current_day].append((task.name, needed))
+                        schedule[current_day].append((task.name, task.course, needed))
                         task.update_progress(needed)
                         hours_left -= needed
                 elif isinstance(task, ContinuousTask):
                     # Continuous tasks can take a portion of the available time
                     assigned = min(task.recommended_daily_chunk(days_left), task.remaining_hours(), hours_left)
                     if assigned > 0:
-                        schedule[current_day].append((task.name, assigned))
+                        schedule[current_day].append((task.name, task.course, assigned))
                         task.update_progress(assigned)
                         hours_left -= assigned
                 else:
                     # Fallback for other potential task types
                     assigned = min(task.recommended_daily_chunk(max(days_left, 1)), task.remaining_hours(), hours_left)
                     if assigned > 0:
-                        schedule[current_day].append((task.name, assigned))
+                        schedule[current_day].append((task.name, task.course, assigned))
                         task.update_progress(assigned)
                         hours_left -= assigned
 
