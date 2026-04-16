@@ -19,8 +19,8 @@ class TaskProgress:
     Composition component to handle progress-related data and logic.
     """
     def __init__(self, estimated_hours: float, completed_hours: float = 0.0, status: str = "not_started"):
-        self._estimated_hours = estimated_hours
-        self._completed_hours = completed_hours
+        self._estimated_hours = round(estimated_hours, 2)
+        self._completed_hours = round(completed_hours, 2)
         self._status = status
 
     @property
@@ -29,7 +29,7 @@ class TaskProgress:
 
     @estimated_hours.setter
     def estimated_hours(self, value: float) -> None:
-        self._estimated_hours = value
+        self._estimated_hours = round(value, 2)
 
     @property
     def completed_hours(self) -> float:
@@ -37,7 +37,7 @@ class TaskProgress:
 
     @completed_hours.setter
     def completed_hours(self, value: float) -> None:
-        self._completed_hours = value
+        self._completed_hours = round(value, 2)
 
     @property
     def status(self) -> str:
@@ -51,7 +51,7 @@ class TaskProgress:
         if hours_done <= 0:
             return
 
-        self._completed_hours = min(self._estimated_hours, self._completed_hours + hours_done)
+        self._completed_hours = round(min(self._estimated_hours, self._completed_hours + hours_done), 2)
         if self._completed_hours == 0:
             self._status = "not_started"
         elif self._completed_hours < self._estimated_hours:
@@ -60,7 +60,7 @@ class TaskProgress:
             self._status = "completed"
 
     def remaining_hours(self) -> float:
-        return max(0.0, self._estimated_hours - self._completed_hours)
+        return round(max(0.0, self._estimated_hours - self._completed_hours), 2)
 
 
 class Task:
@@ -221,7 +221,7 @@ class Task:
         """
         if days_left <= 0:
             return self.remaining_hours()
-        return self.remaining_hours() / days_left
+        return round(self.remaining_hours() / days_left, 2)
 
 
 class ContinuousTask(Task):
@@ -308,10 +308,13 @@ class ContinuousTask(Task):
         else:
             raw_chunk = self.remaining_hours() / days_left
 
+        # Round to 2 decimal places before applying constraints
+        raw_chunk = round(raw_chunk, 2)
+
         # Apply session constraints
         if raw_chunk < self._min_session_hours:
-            return min(self._min_session_hours, self.remaining_hours())
-        return min(raw_chunk, self._max_session_hours, self.remaining_hours())
+            return round(min(self._min_session_hours, self.remaining_hours()), 2)
+        return round(min(raw_chunk, self._max_session_hours, self.remaining_hours()), 2)
 
 
 class NonContinuousTask(Task):
@@ -428,26 +431,26 @@ class Planner:
 
                 # Allocate hours based on the task type
                 if isinstance(task, NonContinuousTask):
-                    needed = task.recommended_daily_chunk(days_left)
+                    needed = round(task.recommended_daily_chunk(days_left), 2)
                     # Non-continuous tasks are only added if they fit in the remaining time
                     if needed <= hours_left:
                         schedule[current_day].append((task.name, task.course, needed))
                         task.update_progress(needed)
-                        hours_left -= needed
+                        hours_left = round(hours_left - needed, 2)
                 elif isinstance(task, ContinuousTask):
                     # Continuous tasks can take a portion of the available time
-                    assigned = min(task.recommended_daily_chunk(days_left), task.remaining_hours(), hours_left)
+                    assigned = round(min(task.recommended_daily_chunk(days_left), task.remaining_hours(), hours_left), 2)
                     if assigned > 0:
                         schedule[current_day].append((task.name, task.course, assigned))
                         task.update_progress(assigned)
-                        hours_left -= assigned
+                        hours_left = round(hours_left - assigned, 2)
                 else:
                     # Fallback for other potential task types
-                    assigned = min(task.recommended_daily_chunk(max(days_left, 1)), task.remaining_hours(), hours_left)
+                    assigned = round(min(task.recommended_daily_chunk(max(days_left, 1)), task.remaining_hours(), hours_left), 2)
                     if assigned > 0:
                         schedule[current_day].append((task.name, task.course, assigned))
                         task.update_progress(assigned)
-                        hours_left -= assigned
+                        hours_left = round(hours_left - assigned, 2)
 
             current_day += timedelta(days=1)
 
