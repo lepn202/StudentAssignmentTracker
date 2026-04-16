@@ -6,7 +6,7 @@ set their availability, and generate a study schedule.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import json
 import os
@@ -86,6 +86,70 @@ def to_rows(schedule):
                 "actual_hours": actual_hours
             })
     return rows
+
+
+def update_actual_hours_callback(day, task_index, key):
+    """Callback to update actual hours in the schedule session state."""
+    new_value = st.session_state[key]
+    st.session_state.schedule[day][task_index] = (
+        st.session_state.schedule[day][task_index][0],
+        st.session_state.schedule[day][task_index][1],
+        st.session_state.schedule[day][task_index][2],
+        float(new_value)
+    )
+    save_data()
+
+
+def display_calendar_view():
+    """Displays the study schedule in a weekly calendar format."""
+    if not st.session_state.schedule:
+        st.info("No schedule generated yet.")
+        return
+
+    all_dates = sorted(st.session_state.schedule.keys())
+    if not all_dates:
+        return
+
+    start_date = all_dates[0]
+    # Move back to the most recent Monday
+    start_monday = start_date - timedelta(days=start_date.weekday())
+    end_date = all_dates[-1]
+
+    current_week_start = start_monday
+    while current_week_start <= end_date:
+        st.markdown(f"#### Week of {current_week_start.strftime('%b %d, %Y')}")
+        cols = st.columns(7)
+        weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+        for i in range(7):
+            day = current_week_start + timedelta(days=i)
+            with cols[i]:
+                is_today = (day == date.today())
+                day_label = f"**{weekday_names[i]}**"
+                if is_today:
+                    day_label += " (Today)"
+                st.markdown(f"{day_label}  \n{day.strftime('%b %d')}")
+
+                if day in st.session_state.schedule:
+                    for idx, (name, course, scheduled, actual) in enumerate(st.session_state.schedule[day]):
+                        with st.container(border=True):
+                            st.markdown(f"**{name}**")
+                            st.caption(f"{course} | {scheduled}h")
+                            key = f"cal_{day.isoformat()}_{idx}"
+                            st.number_input(
+                                "Actual Hours",
+                                min_value=0.0,
+                                value=float(actual),
+                                step=0.5,
+                                key=key,
+                                label_visibility="collapsed",
+                                on_change=update_actual_hours_callback,
+                                args=(day, idx, key)
+                            )
+                else:
+                    st.write("")
+        current_week_start += timedelta(days=7)
+        st.divider()
 
 
 # Initialize session state
@@ -234,52 +298,58 @@ def commit_schedule_progress():
     save_data()
 
 if st.session_state.schedule:
-    # Prepare data for display
-    sched_rows = to_rows(st.session_state.schedule)
-    sched_df = pd.DataFrame(sched_rows)
+    tab1, tab2 = st.tabs(["📅 Calendar View", "📋 Table View"])
 
-    # Format dates with weekdays
-    today = date.today()
-    def format_date(iso_str):
-        d = date.fromisoformat(iso_str)
-        fmt = d.strftime("%A, %b %d")
-        if d == today:
-            fmt += " (Today)"
-        return fmt
+    with tab1:
+        display_calendar_view()
 
-    sched_df["display_date"] = sched_df["date"].apply(format_date)
+    with tab2:
+        # Prepare data for display
+        sched_rows = to_rows(st.session_state.schedule)
+        sched_df = pd.DataFrame(sched_rows)
 
-    # Reorder and rename for UI
-    display_df = sched_df[["display_date", "task", "course", "scheduled_hours", "actual_hours"]]
+        # Format dates with weekdays
+        today = date.today()
+        def format_date(iso_str):
+            d = date.fromisoformat(iso_str)
+            fmt = d.strftime("%A, %b %d")
+            if d == today:
+                fmt += " (Today)"
+            return fmt
 
-    st.write("Mark your progress by entering 'Actual Hours' spent on each session.")
-    edited_sched_df = st.data_editor(
-        display_df,
-        use_container_width=True,
-        column_config={
-            "display_date": st.column_config.TextColumn("Date", disabled=True),
-            "task": st.column_config.TextColumn("Task", disabled=True),
-            "course": st.column_config.TextColumn("Course", disabled=True),
-            "scheduled_hours": st.column_config.NumberColumn("Scheduled Hours", disabled=True),
-            "actual_hours": st.column_config.NumberColumn("Actual Hours", min_value=0.0, step=0.5),
-        },
-        key="schedule_editor",
-        hide_index=True
-    )
+        sched_df["display_date"] = sched_df["date"].apply(format_date)
 
-    # Sync back to session_state.schedule if actual_hours changed
-    if not display_df["actual_hours"].equals(edited_sched_df["actual_hours"]):
-        new_schedule = {}
-        for idx, row in edited_sched_df.iterrows():
-            # Need to find the original date from sched_df using the index
-            orig_row = sched_df.loc[idx]
-            d = date.fromisoformat(orig_row["date"])
-            if d not in new_schedule:
-                new_schedule[d] = []
-            new_schedule[d].append((row["task"], row["course"], row["scheduled_hours"], row["actual_hours"]))
-        st.session_state.schedule = new_schedule
-        save_data()
-        st.rerun()
+        # Reorder and rename for UI
+        display_df = sched_df[["display_date", "task", "course", "scheduled_hours", "actual_hours"]]
+
+        st.write("Mark your progress by entering 'Actual Hours' spent on each session.")
+        edited_sched_df = st.data_editor(
+            display_df,
+            use_container_width=True,
+            column_config={
+                "display_date": st.column_config.TextColumn("Date", disabled=True),
+                "task": st.column_config.TextColumn("Task", disabled=True),
+                "course": st.column_config.TextColumn("Course", disabled=True),
+                "scheduled_hours": st.column_config.NumberColumn("Scheduled Hours", disabled=True),
+                "actual_hours": st.column_config.NumberColumn("Actual Hours", min_value=0.0, step=0.5),
+            },
+            key="schedule_editor",
+            hide_index=True
+        )
+
+        # Sync back to session_state.schedule if actual_hours changed
+        if not display_df["actual_hours"].equals(edited_sched_df["actual_hours"]):
+            new_schedule = {}
+            for idx, row in edited_sched_df.iterrows():
+                # Need to find the original date from sched_df using the index
+                orig_row = sched_df.loc[idx]
+                d = date.fromisoformat(orig_row["date"])
+                if d not in new_schedule:
+                    new_schedule[d] = []
+                new_schedule[d].append((row["task"], row["course"], row["scheduled_hours"], row["actual_hours"]))
+            st.session_state.schedule = new_schedule
+            save_data()
+            st.rerun()
 
 # --- Generate schedule logic ---
 if st.session_state.schedule:
